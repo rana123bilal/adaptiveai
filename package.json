@@ -1,0 +1,26 @@
+{
+  "name": "adaptiveai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=24 <25" },
+  "scripts": {
+    "dev": "concurrently --kill-others --names web,api \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "npm run dev --workspace @adaptiveai/web",
+    "dev:api": "npm run dev --workspace @adaptiveai/api",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --project tsconfig.tools.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "build": "npm run build --workspace @adaptiveai/web && npm run build --workspace @adaptiveai/api",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@types/node": "^24.0.0",
+    "concurrently": "10.0.7",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}
