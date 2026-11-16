@@ -15,6 +15,7 @@ coverage/
 .dev.vars.*
 !.dev.vars.example
 .envrc
+.npmrc
 .npmrc.local
 
 # Personal files and credentials (never commit files from these folders)
