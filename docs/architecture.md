@@ -1,6 +1,44 @@
 # AdaptiveAI architecture
 
-Status: Step 1 design, reviewed 2026-11-16. Only the local frontend and API health check are implemented. Authentication, persistence, Gemini, retrieval, feedback, and evaluation below are planned.
+Status: production architecture designed in Step 1; local mock chat implemented in Step 2. The frontend, demo chat API, runtime validation, provider boundary, cancellation, and retry flow now work locally. Authentication, persistence, Gemini, retrieval, feedback, and evaluation below remain planned.
+
+## Current implementation boundary
+
+Step 2 sends one message through `React → typed API client → POST /api/v1/demo/chat → mock provider`. The demo route returns deterministic text and exists only when `DEMO_ENABLED` is the literal string `true`. It accepts no identity, system prompt, model override, or arbitrary transcript. No provider credentials are used. Conversations are held in React state for the current tab and disappear on refresh.
+
+The mock route deliberately does not implement the future authenticated conversation routes. Its client request ID correlates retries and stable mock responses; it is not a durable idempotency guarantee. Cancellation stops the browser fetch and prevents stale responses from changing the conversation. It does not imply that a future external provider can always undo work already accepted. The implemented flow and UI decisions are explained in [step-2.md](step-2.md).
+
+The committed Worker configuration disables the demo. The local development command explicitly opts in, so a default Worker deployment does not accidentally publish the unauthenticated fixture. A public scripted demo would require an intentional configuration change and exact frontend origin.
+
+## Current module boundaries
+
+| Module | Owns | Does not own |
+| --- | --- | --- |
+| `apps/web/src/App.tsx` | Application composition. | Request handling or conversation state. |
+| `apps/web/src/features/chat/ChatWorkspace.tsx` and `components/` | Chat presentation, composer focus, and history dialog. | HTTP parsing or provider selection. |
+| `apps/web/src/features/chat/useChat.ts` and `model.ts` | Temporary conversations, turn states, retries, and active-request identity. | Durable storage or authentication. |
+| `apps/web/src/features/chat/api.ts` | Browser transport, deadlines, response validation, and safe errors. | Secrets or direct provider access. |
+| `apps/web/src/components/` | Reusable icons and the decorative orb. | Chat state or networking. |
+| `apps/api/src/index.ts` and `app.ts` | Worker entry point, routing, methods, and the HTTP error boundary. | Model implementation or browser UI. |
+| `apps/api/src/config.ts` and `http.ts` | Parsed configuration, CORS, common response headers, and bounded JSON reading. | Chat-specific reply generation. |
+| `apps/api/src/routes.ts` | Health and mock-chat request orchestration. | A live AI endpoint or a database session. |
+| `apps/api/src/providers/` | Provider contract and deterministic mock implementation. | HTTP response construction. |
+| `packages/shared/src/` | Framework-independent API envelopes, demo contracts, and runtime validation. | React, Worker bindings, credentials, or environment access. |
+
+Imports follow these directions:
+
+```text
+web: App → chat workspace → UI components / state hook → API client
+api: Worker entry → request dispatcher → route handlers → provider
+                         ↓                    ↓
+                   HTTP utilities       configuration
+
+web ──→ @adaptiveai/shared ←── api
+```
+
+The browser and Worker never import each other's source. Both use the shared package's public entry point, `index.ts`, which exports `api.ts` and `demo-chat.ts`. Shared source imports only other shared source; contracts cannot pull browser or server implementation into the opposite bundle. `tests/architecture.test.ts` checks these import boundaries with the installed TypeScript compiler. It scans production TypeScript imports, re-exports, and literal dynamic imports; this is a dependency guard, not a security sandbox.
+
+Keep a small number of modules with clear responsibilities. Authentication, persistence, and a real provider can add explicit boundaries when implemented; placeholder services and repositories would add indirection without behavior to verify today.
 
 ## What we are building
 
@@ -35,7 +73,7 @@ flowchart LR
 
 No permanently running local server is required after deployment. Pages, Workers, Supabase, and Gemini handle traffic in the cloud. This is a production-style portfolio application, not an uptime guarantee: the [Supabase free plan can pause after inactivity](https://supabase.com/pricing), and upstream quotas can stop AI requests.
 
-## Request lifecycle
+## Planned production request lifecycle
 
 The first implementation uses a normal JSON response. Streaming can follow once persistence, cancellation, and partial-answer behavior are reliable.
 
@@ -59,7 +97,7 @@ All user data starts private. The browser may contact Supabase Auth directly; ap
 - A privileged Supabase server key bypasses RLS. The Worker-only functions therefore perform explicit ownership, relationship, state-transition, and authorization checks. Keep their search path fixed and revoke default public execution. A server key is not a substitute for these checks.
 - No endpoint accepts a tenant override. Operator privileges come from server-managed authorization, never editable user metadata.
 
-The detailed table, grant, and foreign-key design is in [database.md](database.md). These protections are design requirements; Step 1 does not claim to have implemented or tested them. See [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security) and [database security](https://supabase.com/docs/guides/database/secure-data).
+The detailed table, grant, and foreign-key design is in [database.md](database.md). These protections remain design requirements; the mock chat milestone does not claim to have implemented or tested them. See [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security) and [database security](https://supabase.com/docs/guides/database/secure-data).
 
 ## Memory and validation
 
@@ -75,7 +113,7 @@ Start with text embeddings of **768 dimensions**, cosine similarity, and exact s
 
 Cloudflare burst limits are useful abuse controls, but their [rate-limit binding is approximate and location-specific](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/). An atomic PostgreSQL reservation enforces the application-wide budget. Generation, embedding, validation calls, and evaluation all consume that budget. Failed calls are accounted for conservatively when provider usage is uncertain.
 
-The Worker limits body size, history, retrieved context, output tokens, concurrency, and retries. It returns explicit quota/unavailable states and uses request IDs for diagnosis. Logs contain operation metadata, latency, and error codes; raw prompts, responses, tokens, keys, and personal memory are excluded. CORS allows configured frontend origins but is not authentication.
+The planned production Worker must limit body size, history, retrieved context, output tokens, concurrency, and retries. It must return explicit quota/unavailable states and use request IDs for diagnosis. Logs should contain operation metadata, latency, and error codes; raw prompts, responses, tokens, keys, and personal memory are excluded. Step 2 already enforces demo body limits and response correlation but has no provider quota or production logging subsystem. CORS allows configured frontend origins but is not authentication.
 
 Only public configuration may use `VITE_*` variables. Gemini and privileged Supabase keys belong in Worker secrets. Preview deployments use separate credentials/data and exact callback/origin allowlists before integration.
 

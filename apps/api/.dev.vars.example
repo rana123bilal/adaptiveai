@@ -1,4 +1,4 @@
-# Step 1 works without this file. Copy to .dev.vars when adding integrations.
+# The mock chat milestone works without this file. Copy to .dev.vars when adding integrations.
 # These values are placeholders. Never put secrets in a VITE_ variable.
 # GEMINI_API_KEY=
 # GEMINI_CHAT_MODEL=choose-an-available-model-in-step-3

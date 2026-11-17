@@ -2,6 +2,8 @@
 
 Keep each milestone small enough to explain and demonstrate. Every README claim should describe behavior that is implemented and verified.
 
+Current implementation: Steps 1 and 2. Step 2 uses a mock-only local endpoint and session conversations; it does not connect Gemini or persist history. See the [Step 2 walkthrough](step-2.md) for the implemented request flow and failure scenarios.
+
 | Step | Work | Done when |
 | --- | --- | --- |
 | 1. Architecture and setup | Architecture, API contracts, schema design, workspace, health check, CI. | A clean install builds; frontend reaches local Worker; tests pass; design vs implementation is clear. |

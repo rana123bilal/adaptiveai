@@ -1,36 +1,38 @@
 # Local setup and deployment preparation
 
-Status: Step 1. Local setup is runnable; application hosting and database setup below are plans for later milestones. The source repository is published on GitHub; the cloud application has not been provisioned.
+Status: Step 2. Local mock chat is runnable; application hosting and database setup below are plans for later milestones. The source repository is published on GitHub; the cloud application has not been provisioned.
 
 ## Prerequisites and commands
 
-Use Node.js 24 (`.nvmrc`) and npm. Run commands from the repository root, the directory containing this README and `package-lock.json`. Docker, Supabase CLI, cloud accounts, and secrets are not needed for Step 1.
+Use Node.js 24 (`.nvmrc`) and npm. Run commands from the repository root, the directory containing this README and `package-lock.json`. Docker, Supabase CLI, cloud accounts, and secrets are not needed for the mock chat milestone.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-The web server uses `http://localhost:5173`; the Worker uses port `8787`. Both bind locally. The button on the foundation page calls `/api/v1/health`, which Vite proxies to the Worker. Both servers stop with Ctrl+C. `--strictPort` prevents the frontend silently selecting a different port.
+The web server uses `http://localhost:5173`; the Worker uses port `8787`. Both bind locally. Sending a message calls `/api/v1/demo/chat`, which Vite proxies to the Worker. Use **Stop response** while a request is pending or **Retry response** after cancellation or failure. Simulated failure and delay scenarios are exercised by automated tests rather than exposed as interface controls. Both servers stop with Ctrl+C. `--strictPort` prevents the frontend silently selecting a different port.
+
+Chat text stays in React memory for this session. Reloading starts a clean workspace. The Worker returns scripted responses and does not store messages or contact an AI provider. This is deliberately separate from the future authenticated conversation API.
 
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Start frontend and Worker together. |
 | `npm run dev:web` / `npm run dev:api` | Start either process separately. |
 | `npm run typecheck` | Check shared types, frontend, API, and test/configuration files. |
-| `npm test` | Run Vitest HTTP boundary tests. |
+| `npm test` | Run Vitest contract, transport, HTTP, and architecture boundary tests. |
 | `npm run test:watch` | Watch unit tests during development. |
 | `npm run build` | Compile web assets and dry-run bundle the Worker; does not publish. |
 | `npm run check` | Typecheck, unit tests, and both builds. |
 | `npm run test:e2e` | Start missing local servers and run browser tests. |
 
-Before the first browser run, use `npx playwright install chromium`. On Linux CI, the workflow uses `npx playwright install --with-deps chromium` to install OS dependencies too. Browser tests use a real local Worker; the failure test explicitly interrupts its health request. `npm run check` alone does not run browser tests.
+Before the first browser run, use `npx playwright install chromium`. On Linux CI, the workflow uses `npx playwright install --with-deps chromium` to install OS dependencies too. Browser tests use a real local Worker for normal chat and demo failure scenarios. `npm run check` alone does not run browser tests.
 
-Dependencies are locked by `package-lock.json`. CI and fresh clones use `npm ci`, not an unbounded package update. The initial tests do not prove RLS, live Gemini compatibility, or production performance; those belong to their integration milestones.
+Dependencies are locked by `package-lock.json`. CI and fresh clones use `npm ci`, not an unbounded package update. Failed CI runs retain Playwright HTML reports, traces, and screenshots as a `browser-failure-diagnostics` artifact for seven days. Reports contain synthetic test messages only. See [Playwright CI diagnostics](https://playwright.dev/docs/ci-intro) and [artifact configuration](https://github.com/actions/upload-artifact). The initial tests do not prove RLS, live Gemini compatibility, or production performance; those belong to their integration milestones.
 
 ## Environment ownership
 
-Nothing needs to be copied for Step 1. The example files document future configuration. Do not paste secrets into chat or commit them.
+Nothing needs to be copied for Step 2. The checked-in Wrangler configuration sets `DEMO_ENABLED="false"`. `npm run dev:api` passes the explicit local override `--var DEMO_ENABLED:true`, so `npm run dev` and browser tests work without exposing the fixture in a default deployment. The example files document future integrations. Do not paste secrets into chat or commit them. `.npmrc`, real environment files, private folders, credentials, and local database exports are ignored; environment example files contain placeholders only.
 
 | Variable | Location later | Secret? | Purpose |
 | --- | --- | --- | --- |
@@ -38,6 +40,7 @@ Nothing needs to be copied for Step 1. The example files document future configu
 | `VITE_SUPABASE_URL` | Web build | No | Supabase project URL. |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Web build | No | Browser project identifier; protected by database grants and RLS. |
 | `ALLOWED_ORIGINS` | Worker configuration | No | Exact comma-separated origins; no paths, trailing slashes, or broad preview wildcard. |
+| `DEMO_ENABLED` | Worker configuration | No | Set to the literal string `true` to enable the mock-only demo route. Missing or other values disable it. Never use this flag to expose a live AI provider. |
 | `SUPABASE_URL` | Worker configuration | No | HTTPS project URL. |
 | `SUPABASE_PUBLISHABLE_KEY` | Worker configuration | No | Used with the verified user's JWT for ordinary reads. |
 | `GEMINI_CHAT_MODEL` | Worker configuration | No | Choose an available model after verifying account quota in Step 3. |
@@ -86,4 +89,4 @@ Use GitHub Actions as the single deployment authority. Create a Pages **Direct U
 
 The Vite proxy exists only in development. Production Pages must call the Worker origin configured in `VITE_API_BASE_URL`; Worker CORS must allow the exact Pages origin. A future same-origin custom-domain route is optional. Configure a Content Security Policy with the actual Supabase/Worker origins before auth launches; the current `_headers` file supplies basic browser headers only.
 
-Deploy the compatible API before a frontend depending on new routes. Smoke-test the live health endpoint, identity rejection, and a small budgeted authenticated request. Keep the previous Worker and frontend versions for rollback; use additive database changes because rolling back code does not undo a migration. No deployment workflow is enabled in Step 1.
+Deploy the compatible API before a frontend depending on new routes. Smoke-test the live health endpoint, identity rejection, and a small budgeted authenticated request. Keep the previous Worker and frontend versions for rollback; use additive database changes because rolling back code does not undo a migration. No deployment workflow is enabled in Step 2.
