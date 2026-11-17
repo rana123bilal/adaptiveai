@@ -1,14 +1,15 @@
 # AdaptiveAI API design
 
-Status: Step 1. Only the health endpoint is implemented. Every other endpoint, authorization rule, persistence behavior, and limit below is a planned contract, not a functioning service. Unknown routes currently return `404`.
+Status: Step 2. Health and mock demo chat are implemented. The authenticated conversation, memory, feedback, and evaluation routes remain planned. Unknown routes return `404`; the mock route does not grant access to future production routes.
 
 Base path: `/api/v1`. JSON requests and responses use UTF-8. Auth is managed by the Supabase SDK rather than a duplicate `/login` API.
 
-## Implemented endpoint
+## Implemented endpoints
 
 | Method | Path | Access | Result |
 | --- | --- | --- | --- |
 | GET, HEAD | `/health` | Public | Worker liveness; no Gemini or database call. |
+| POST | `/demo/chat` | Demo only; no authentication | Scripted mock response when `DEMO_ENABLED="true"`; no persistence or upstream AI call. |
 
 The health payload is:
 
@@ -16,12 +17,61 @@ The health payload is:
 {
   "service": "adaptiveai-api",
   "status": "ok",
-  "stage": "foundation",
+  "stage": "chat-shell",
+  "mode": "mock",
   "dependencies": { "gemini": "not-configured", "supabase": "not-configured" }
 }
 ```
 
 HEAD returns the same status/headers without a body. A successful health check means the Worker can answer HTTP requests; it does not mean AI, authentication, or the database is ready. CORS supports the configured frontend origin.
+
+## Implemented mock chat exchange
+
+```http
+POST /api/v1/demo/chat
+Content-Type: application/json
+
+{
+  "clientRequestId": "00000000-0000-4000-8000-000000000001",
+  "content": "How does memory work?",
+  "scenario": "reply"
+}
+```
+
+```json
+{
+  "requestId": "00000000-0000-4000-8000-000000000002",
+  "clientRequestId": "00000000-0000-4000-8000-000000000001",
+  "mode": "mock",
+  "model": "adaptiveai-mock-v1",
+  "message": {
+    "id": "mock-00000000-0000-4000-8000-000000000001",
+    "role": "assistant",
+    "content": "An illustrative scripted response."
+  }
+}
+```
+
+The response example illustrates the envelope, not an AI-generated or evaluated answer. Successful calls return `200`. The server-generated `requestId` identifies this HTTP attempt; `clientRequestId` identifies the user action and is reused on retry. Stable mock output does not provide durable server-side idempotency or storage.
+
+The request must be a JSON object containing only `clientRequestId`, `content`, and optional `scenario`. A client request ID must be a UUID. Content is trimmed and must be 1–4,000 characters, measured as JavaScript UTF-16 code units. The Worker reads at most 16 KiB of request bytes, including requests without a `Content-Length` header. Malformed JSON, unsupported fields, invalid scenarios, and wrong value types are rejected at runtime. TypeScript types alone cannot establish that a network request is valid.
+
+`scenario` defaults to `reply`, and the interface always uses that normal response path. `reply` produces a short delayed deterministic response; `slow` waits longer so cancellation can be exercised; `error` returns `503` with code `DEMO_FAILURE`. The browser tests override the outgoing scenario when they need failure or delay coverage; these development controls are not visible in the interface. They belong only to the mock endpoint and must not become parameters that clients can use to control real provider behavior.
+
+The endpoint does not authenticate a bearer identity or accept conversation ownership assertions, model selection, system prompts, or transcripts. The browser retains its own session conversation display, while the Worker sees only this one message. Unknown body fields are rejected. The route is enabled only by the literal configuration value `DEMO_ENABLED="true"`; the committed default is disabled and the local development script opts in explicitly. Copying future provider keys into an environment does not turn the mock provider into Gemini.
+
+Implemented demo failures use the shared `{ "error": { "code", "message", "requestId" } }` envelope:
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `400` | `INVALID_REQUEST` / `INVALID_JSON` | Invalid body shape, values, JSON, or UTF-8. |
+| `403` | `ORIGIN_NOT_ALLOWED` | Browser origin is not in the exact allowlist. |
+| `408` | `REQUEST_CANCELLED` | The Worker observed an aborted request; browser cancellation usually rejects fetch locally first. |
+| `413` | `BODY_TOO_LARGE` | Body exceeds 16 KiB. |
+| `415` | `UNSUPPORTED_MEDIA_TYPE` | Content type or declared charset is unsupported. |
+| `503` | `DEMO_DISABLED` / `DEMO_FAILURE` | Demo is disabled or the simulated error scenario was selected. |
+
+For allowed browser origins, CORS permits POST and the `Content-Type` request header on this route. Health supports GET/HEAD. Both provide OPTIONS preflight handling for their own supported methods. Responses are uncached. A cancelled fetch is shown as cancelled in the interface, not as a completed empty answer. The browser guards against late responses and leaves an explicit retry action.
 
 ## Planned endpoint inventory
 
